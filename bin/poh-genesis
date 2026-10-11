@@ -61,14 +61,14 @@ args=(
 )
 [[ ${WARMUP:-1} == 1 ]] && args+=(--enable-warmup-epochs)
 
-solana-genesis "${args[@]}"
+solana-genesis "${args[@]}" | tee "$data/genesis/genesis.txt"
 
 for i in $(seq 1 "$validators"); do
   cp -a "$data/genesis" "$data/validator-$i/ledger"
 done
 
-genesis_hash=$(agave-ledger-tool genesis-hash --ledger "$data/genesis" 2>/dev/null | tail -n1)
-shred_version=$(agave-ledger-tool shred-version --ledger "$data/genesis" 2>/dev/null | tail -n1)
+genesis_hash=$(sed -n 's/^Genesis hash: *//p' "$data/genesis/genesis.txt")
+shred_version=$(sed -n 's/^Shred version: *//p' "$data/genesis/genesis.txt")
 {
   echo "{"
   echo "  \"genesisHash\": \"$genesis_hash\","
