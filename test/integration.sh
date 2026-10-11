@@ -28,8 +28,8 @@ cleanup() {
 trap cleanup EXIT
 
 run() {
-  docker run -d --name "$1" --network host --ulimit nofile=1000000:1000000 \
-    --log-opt max-size=50m --log-opt max-file=3 \
+  docker run -d --name "$1" --network host --ulimit nofile=1000000:1000000 --ulimit memlock=-1:-1 \
+    --security-opt seccomp=unconfined --log-opt max-size=50m --log-opt max-file=3 \
     -e HOST_IP="$host_ip" "${@:3}" -v "$work/$2:/data" "$image" "${run_cmd[@]}"
 }
 call() {

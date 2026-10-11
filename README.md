@@ -19,7 +19,9 @@ curl -fsSL https://github.com/ndcbweb/poh-chain/releases/download/latest/poh-cha
 | `poh-validator N` | Bootstrap validator N. Ports: gossip `8001 + 100(N-1)`, dynamic `8002-8040` (+offset), RPC `8899` (+offset). |
 | `poh-rpc` | Non-voting RPC node following the validators: JSON-RPC on `RPC_PORT` (8545), WebSocket on `RPC_PORT + 1`, transaction history and token indexes. |
 
-All commands keep state in `/data`. Run with `--network host` and `--ulimit nofile=1000000:1000000`.
+All commands keep state in `/data`. Run validators and RPC nodes with `--network host`,
+`--ulimit nofile=1000000:1000000 --ulimit memlock=-1:-1` and `--security-opt seccomp=unconfined`:
+Agave 4.3 requires io_uring, which Docker's default seccomp profile blocks.
 
 ### poh-genesis
 
