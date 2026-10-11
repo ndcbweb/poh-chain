@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Creates the cluster: validator keys, genesis with the treasury, stake and the standard programs,
+# and one ready ledger per bootstrap validator. Does nothing if genesis already exists.
+#
+# Env: VALIDATORS (1-4), TREASURY_PUBKEY, TREASURY_LAMPORTS, VALIDATOR_LAMPORTS, STAKE_LAMPORTS,
+#      TICKS_PER_SLOT, TICK_US, SLOTS_PER_EPOCH, WARMUP (1|0), LAMPORTS_PER_SIGNATURE,
+#      FEE_BURN, COMMISSION, INFLATION (full|pico|none)
+set -euo pipefail
+
+data=${POH_DATA:-/data}
+validators=${VALIDATORS:-1}
+: "${TREASURY_PUBKEY:?}" "${TREASURY_LAMPORTS:?}"
+
+if [[ -f $data/cluster.json ]]; then
+  echo "genesis already created"
+  cat "$data/cluster.json"
+  exit 0
+fi
+if ! [[ $validators =~ ^[1-4]$ ]]; then
+  echo "VALIDATORS must be 1-4" >&2
+  exit 1
+fi
+
+rm -rf "$data/genesis" "$data"/validator-*
+mkdir -p "$data/genesis"
+
+keys=()
+bls=()
+for i in $(seq 1 "$validators"); do
+  dir=$data/validator-$i
+  mkdir -p "$dir"
+  for key in identity vote-account stake-account; do
+    solana-keygen new --no-passphrase -sfo "$dir/$key.json" >/dev/null
+  done
+  chmod 600 "$dir"/*.json
+  keys+=(--bootstrap-validator "$dir/identity.json" "$dir/vote-account.json" "$dir/stake-account.json")
+  bls+=(--bootstrap-validator-bls-pubkey "$(solana-keygen bls_pubkey "$dir/identity.json")")
+done
+
+mapfile -t programs < /opt/poh/programs/genesis-args
+
+args=(
+  --ledger "$data/genesis"
+  --cluster-type development
+  --max-genesis-archive-unpacked-size 1073741824
+  "${keys[@]}"
+  "${bls[@]}"
+  --bootstrap-validator-lamports "${VALIDATOR_LAMPORTS:-500000000000}"
+  --bootstrap-validator-stake-lamports "${STAKE_LAMPORTS:-1000000000000}"
+  --faucet-pubkey "$TREASURY_PUBKEY"
+  --faucet-lamports "$TREASURY_LAMPORTS"
+  --ticks-per-slot "${TICKS_PER_SLOT:-64}"
+  --target-tick-duration "${TICK_US:-6250}"
+  --hashes-per-tick auto
+  --slots-per-epoch "${SLOTS_PER_EPOCH:-432000}"
+  --target-lamports-per-signature "$(( ${LAMPORTS_PER_SIGNATURE:-5000} * 2 ))"
+  --fee-burn-percentage "${FEE_BURN:-50}"
+  --vote-commission-percentage "${COMMISSION:-10}"
+  --inflation "${INFLATION:-full}"
+  "${programs[@]}"
+)
+[[ ${WARMUP:-1} == 1 ]] && args+=(--enable-warmup-epochs)
+
+solana-genesis "${args[@]}"
+
+for i in $(seq 1 "$validators"); do
+  cp -a "$data/genesis" "$data/validator-$i/ledger"
+done
+
+genesis_hash=$(agave-ledger-tool genesis-hash --ledger "$data/genesis" 2>/dev/null | tail -n1)
+shred_version=$(agave-ledger-tool shred-version --ledger "$data/genesis" 2>/dev/null | tail -n1)
+{
+  echo "{"
+  echo "  \"genesisHash\": \"$genesis_hash\","
+  echo "  \"shredVersion\": ${shred_version:-0},"
+  echo "  \"treasury\": \"$TREASURY_PUBKEY\","
+  echo "  \"validators\": ["
+  for i in $(seq 1 "$validators"); do
+    dir=$data/validator-$i
+    sep=$([[ $i -lt $validators ]] && echo "," || true)
+    echo "    {\"identity\": \"$(solana-keygen pubkey "$dir/identity.json")\", \"vote\": \"$(solana-keygen pubkey "$dir/vote-account.json")\", \"stake\": \"$(solana-keygen pubkey "$dir/stake-account.json")\"}$sep"
+  done
+  echo "  ]"
+  echo "}"
+} > "$data/cluster.json.tmp"
+mv "$data/cluster.json.tmp" "$data/cluster.json"
+cat "$data/cluster.json"

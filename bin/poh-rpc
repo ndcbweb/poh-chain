@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Runs a non-voting RPC node that follows the validators: full JSON-RPC on RPC_PORT, pubsub
+# (WebSocket) on RPC_PORT + 1, transaction history and token indexes for explorers and wallets.
+#
+# Env: HOST_IP, ENTRY_IP (validators host), RPC_PORT, GOSSIP_PORT, DYNAMIC_PORT_RANGE, LEDGER_SHREDS
+set -euo pipefail
+
+data=${POH_DATA:-/data}
+: "${HOST_IP:?}" "${ENTRY_IP:?}"
+entry_rpc="http://$ENTRY_IP:8899"
+dir=$data/rpc
+mkdir -p "$dir"
+
+rpc() {
+  curl -sf --max-time 5 "$entry_rpc" -H 'content-type: application/json' \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":${2:-[]}}"
+}
+
+echo "Waiting for the validators at $entry_rpc"
+until genesis_hash=$(rpc getGenesisHash | jq -er .result); do sleep 5; done
+until [[ $(rpc getSlot | jq -r '.result // 0') -gt 0 ]]; do sleep 5; done
+mapfile -t known < <(rpc getVoteAccounts | jq -r '.result.current[].nodePubkey, .result.delinquent[].nodePubkey')
+
+[[ -f $dir/identity.json ]] || solana-keygen new --no-passphrase -so "$dir/identity.json" >/dev/null
+
+args=(
+  --identity "$dir/identity.json"
+  --ledger "$dir/ledger"
+  --entrypoint "$ENTRY_IP:8001"
+  --expected-genesis-hash "$genesis_hash"
+  --bind-address "$HOST_IP"
+  --gossip-port "${GOSSIP_PORT:-8001}"
+  --dynamic-port-range "${DYNAMIC_PORT_RANGE:-8002-8040}"
+  --rpc-port "${RPC_PORT:-8545}"
+  --rpc-bind-address 0.0.0.0
+  --no-voting
+  --full-rpc-api
+  --enable-rpc-transaction-history
+  --enable-extended-tx-metadata-storage
+  --rpc-pubsub-enable-block-subscription
+  --account-index program-id
+  --account-index spl-token-owner
+  --account-index spl-token-mint
+  --only-known-rpc
+  --no-poh-speed-test
+  --no-os-network-limits-test
+  --no-xdp
+  --allow-private-addr
+  --snapshot-interval-slots 500
+  --no-incremental-snapshots
+  --limit-ledger-size "${LEDGER_SHREDS:-50000000}"
+  --log -
+)
+for key in "${known[@]}"; do
+  args+=(--known-validator "$key")
+done
+
+exec agave-validator "${args[@]}"

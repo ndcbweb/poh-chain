@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Runs bootstrap validator N from the ledger poh-genesis prepared. Validator 1 is the gossip
+# entrypoint; the others join it. Ports are offset by 100 per validator so several share a host.
+#
+# Env: HOST_IP (private address peers reach this host on), LEDGER_SHREDS
+set -euo pipefail
+
+data=${POH_DATA:-/data}
+i=${1:?usage: poh-validator N}
+: "${HOST_IP:?}"
+dir=$data/validator-$i
+[[ -d $dir/ledger ]] || { echo "run poh-genesis first" >&2; exit 1; }
+
+offset=$(( (i - 1) * 100 ))
+args=(
+  --identity "$dir/identity.json"
+  --vote-account "$dir/vote-account.json"
+  --ledger "$dir/ledger"
+  --bind-address "$HOST_IP"
+  --gossip-port "$(( 8001 + offset ))"
+  --dynamic-port-range "$(( 8002 + offset ))-$(( 8040 + offset ))"
+  --rpc-port "$(( 8899 + offset ))"
+  --rpc-bind-address 0.0.0.0
+  --full-rpc-api
+  --no-snapshot-fetch
+  --no-genesis-fetch
+  --no-wait-for-vote-to-start-leader
+  --no-poh-speed-test
+  --no-os-network-limits-test
+  --no-xdp
+  --allow-private-addr
+  --snapshot-interval-slots 500
+  --no-incremental-snapshots
+  --limit-ledger-size "${LEDGER_SHREDS:-50000000}"
+  --log -
+)
+if (( i > 1 )); then
+  args+=(--entrypoint "$HOST_IP:8001")
+fi
+
+exec agave-validator "${args[@]}"
