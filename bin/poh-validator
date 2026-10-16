@@ -20,7 +20,8 @@ args=(
   --gossip-port "$(( 8001 + offset ))"
   --dynamic-port-range "$(( 8002 + offset ))-$(( 8040 + offset ))"
   --rpc-port "$(( 8899 + offset ))"
-  --rpc-bind-address 0.0.0.0
+  # Agave 4.3 requires every bound socket on the same IP (bind-address and rpc-bind-address).
+  --rpc-bind-address "$HOST_IP"
   --full-rpc-api
   --no-snapshot-fetch
   --no-genesis-fetch

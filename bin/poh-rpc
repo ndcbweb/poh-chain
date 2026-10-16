@@ -32,7 +32,8 @@ args=(
   --gossip-port "${GOSSIP_PORT:-8001}"
   --dynamic-port-range "${DYNAMIC_PORT_RANGE:-8002-8040}"
   --rpc-port "${RPC_PORT:-8545}"
-  --rpc-bind-address 0.0.0.0
+  # Agave 4.3 requires every bound socket on the same IP (bind-address and rpc-bind-address).
+  --rpc-bind-address "$HOST_IP"
   --no-voting
   --full-rpc-api
   --enable-rpc-transaction-history
